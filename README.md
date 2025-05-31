@@ -1,7 +1,20 @@
 # POC: Temporal + LangGraph Integration 
-## Candidate: Research Agent Workflow
+## Candidate: Deep Research Agent Workflow
 
 A proof-of-concept research assistant that demonstrates how to combine Temporal workflow orchestration with LangGraph's intelligent graph-based workflow management for building robust AI agent workflows.
+
+## Motivation
+
+Building production AI agent workflows requires both **intelligent decision-making** and **distributed reliability**:
+
+- **LangGraph**: Excellent for AI agent logic but **core is not distributed** - runs on single processes without built-in scaling
+- **Temporal**: World-class distributed orchestration that can **make any workflow distributed**
+
+This POC shows how **Temporal distributes LangGraph workflows** to achieve **intelligent AND scalable** AI systems:
+
+```
+🤖 LangGraph (Intelligence)  +  ⚡ Temporal (Distribution)  =  🚀 Scalable AI Workflows
+```
 
 ## Architecture
 
@@ -122,64 +135,4 @@ python -m research_assistant_langgraph research "climate change impacts" 4 2
 # Using module components directly
 python -m research_assistant_langgraph.worker
 python -m research_assistant_langgraph.client "artificial intelligence ethics" 3 2
-```
-
-## POC Assessment
-
-### ✅ **Pros**
-
-- **Best of Both Worlds**: Combines Temporal's rock-solid orchestration with LangGraph's intelligent agent workflows
-- **Fault Tolerance**: Temporal ensures workflows survive failures, restarts, and infrastructure issues
-- **Complex Logic**: LangGraph handles sophisticated conditional flows and decision-making within activities  
-- **Scalability**: Activities can run across multiple workers and scale independently
-- **Debuggability**: Clear separation between orchestration logic (Temporal) and business logic (LangGraph)
-- **Production Ready**: Temporal provides enterprise-grade features (monitoring, versioning, scheduling)
-
-### ❌ **Cons**
-
-- **Complexity**: Two workflow systems require understanding both paradigms and their interaction patterns
-- **Sandbox Restrictions**: Temporal's deterministic requirements need careful LangChain module passthrough configuration
-- **Learning Curve**: Developers need expertise in both Temporal workflows and LangGraph state management
-- **Overhead**: Additional abstraction layer may be overkill for simple linear workflows  
-- **Dependencies**: Coupling between two major framework versions and their evolution paths
-- **Debugging**: Troubleshooting issues across two systems can be more challenging
-
-## Key Features
-
-### 🧠 LangGraph Integration
-- **Planning Activity**: Uses StateGraph with `analyze_topic_node` → `create_plan_node`
-- **Research Activity**: Multi-step graph: `generate_queries_node` → `conduct_searches_node` → `synthesize_content_node`  
-- **Report Generation**: Complex assembly: `create_executive_summary_node` → `compile_main_content_node` → `create_conclusion_node` → `compile_sources_node` → `finalize_report_node`
-
-### ⚡ Temporal Orchestration
-- Distributed workflow execution
-- Fault tolerance and automatic retries
-- Parallel section research
-- Durable state management
-
-### 🔧 Modular Design
-- **Factorized Graph Builder**: Common LangGraph patterns in `utils/graph_builder.py`
-- **Separated Activities**: Each activity in its own file with focused responsibility
-- **Centralized Configuration**: Environment and API key management
-- **Type Safety**: Full TypeScript-style type annotations
-
-## Configuration
-
-Set environment variables in `.env`:
-
-```env
-# LLM Configuration
-DEFAULT_LLM_PROVIDER=openai  # or anthropic
-DEFAULT_LLM_MODEL=gpt-4o-mini
-OPENAI_API_KEY=your_key_here
-ANTHROPIC_API_KEY=your_key_here
-
-# Search Configuration  
-DEFAULT_SEARCH_PROVIDER=duckduckgo  # or tavily
-TAVILY_API_KEY=your_key_here
-MAX_SEARCH_RESULTS=5
-MAX_CONTENT_LENGTH=2000
-
-# Temporal Configuration
-TEMPORAL_HOST=localhost:7233
 ```
