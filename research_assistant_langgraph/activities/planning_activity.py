@@ -1,5 +1,6 @@
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
+import uuid
 
 from ..config import Config
 from ..schemas.types import ResearchPlanDict, PlanningGraphState, ResearchPlan
@@ -7,7 +8,7 @@ from ..utils.graph_builder import GraphBuilder, log_graph_execution
 
 @activity.defn
 async def planning_activity_with_langgraph(topic: str, max_sections: int) -> ResearchPlanDict:
-    """Planning activity using LangGraph StateGraph"""
+    """Planning activity using LangGraph StateGraph with checkpointing"""
     activity.logger.info(f"[Planning] Starting LangGraph-based planning for: {topic}")
     
     try:
@@ -89,17 +90,22 @@ async def planning_activity_with_langgraph(topic: str, max_sections: int) -> Res
                 "messages": state["messages"] + [response]
             }
         
-        # Build the planning graph using the utility
+        # Build the planning graph with checkpointing enabled
         planning_graph = GraphBuilder.create_linear_flow(
             PlanningGraphState,
             [
                 ("analyze_topic", analyze_topic_node),
                 ("create_plan", create_plan_node)
-            ]
+            ],
+            enable_checkpointing=True  # Enable checkpointing for state persistence
         )
         
-        # Execute the planning graph
-        log_graph_execution("Planning", "Executing planning workflow")
+        # Create a unique thread ID for this planning session
+        thread_id = f"planning_{uuid.uuid4().hex[:8]}"
+        config = {"configurable": {"thread_id": thread_id}}
+        
+        # Execute the planning graph with checkpointing
+        log_graph_execution("Planning", "Executing planning workflow with checkpointing", f"thread_id: {thread_id}")
         planning_result = planning_graph.invoke({
             "topic": topic,
             "max_sections": max_sections,
@@ -107,7 +113,15 @@ async def planning_activity_with_langgraph(topic: str, max_sections: int) -> Res
             "analysis_complete": False,
             "plan_refined": False,
             "messages": []
-        })
+        }, config)
+        
+        # Log checkpoint information for debugging
+        try:
+            final_state = planning_graph.get_state(config)
+            activity.logger.info(f"[Planning] Checkpoint saved with ID: {final_state.config.get('checkpoint_id', 'unknown')}")
+            activity.logger.info(f"[Planning] Final state contains {len(final_state.values.get('messages', []))} messages")
+        except Exception as e:
+            activity.logger.warning(f"[Planning] Could not retrieve checkpoint info: {e}")
         
         # Extract and return the plan
         final_plan = planning_result["research_plan"]

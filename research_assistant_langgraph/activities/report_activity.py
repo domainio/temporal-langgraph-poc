@@ -1,3 +1,4 @@
+import uuid
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 from typing import List
@@ -8,7 +9,7 @@ from ..utils.graph_builder import GraphBuilder, log_graph_execution
 
 @activity.defn
 async def report_generation_activity_with_langgraph(plan: ResearchPlanDict, sections: List[ResearchSection]) -> str:
-    """Report generation using LangGraph StateGraph"""
+    """Report generation using LangGraph StateGraph with checkpointing"""
     activity.logger.info(f"[Report] Starting LangGraph-based report generation for: {plan['topic']}")
     
     try:
@@ -197,7 +198,7 @@ async def report_generation_activity_with_langgraph(plan: ResearchPlanDict, sect
                 "report_finalized": True
             }
         
-        # Build the report generation graph using the utility
+        # Build the report generation graph with checkpointing enabled
         report_graph = GraphBuilder.create_linear_flow(
             ReportGraphState,
             [
@@ -206,11 +207,16 @@ async def report_generation_activity_with_langgraph(plan: ResearchPlanDict, sect
                 ("create_conclusion", create_conclusion_node),
                 ("compile_sources", compile_sources_node),
                 ("finalize_report", finalize_report_node)
-            ]
+            ],
+            enable_checkpointing=True  # Enable checkpointing for state persistence
         )
         
-        # Execute the report generation graph
-        log_graph_execution("Report", "Executing report generation workflow")
+        # Create a unique thread ID for this report generation session
+        thread_id = f"report_{plan['topic'].lower().replace(' ', '_')}_{uuid.uuid4().hex[:8]}"
+        config = {"configurable": {"thread_id": thread_id}}
+        
+        # Execute the report generation graph with checkpointing
+        log_graph_execution("Report", "Executing report generation workflow with checkpointing", f"thread_id: {thread_id}")
         report_result = report_graph.invoke({
             "research_plan": plan,
             "sections": sections,
@@ -225,10 +231,21 @@ async def report_generation_activity_with_langgraph(plan: ResearchPlanDict, sect
             "sources_compiled": False,
             "report_finalized": False,
             "messages": []
-        })
+        }, config)
         
-        log_graph_execution("Report", "Completed report generation", f"{len(report_result['final_report'])} characters")
-        return report_result["final_report"]
+        # Log checkpoint information for debugging
+        try:
+            final_state = report_graph.get_state(config)
+            activity.logger.info(f"[Report] Checkpoint saved with ID: {final_state.config.get('checkpoint_id', 'unknown')}")
+            activity.logger.info(f"[Report] Final state contains {len(final_state.values.get('messages', []))} messages")
+            activity.logger.info(f"[Report] Report finalized: {final_state.values.get('report_finalized', False)}")
+        except Exception as e:
+            activity.logger.warning(f"[Report] Could not retrieve checkpoint info: {e}")
+        
+        # Return final report
+        final_report = report_result["final_report"]
+        log_graph_execution("Report", "Completed", f"{len(final_report)} characters")
+        return final_report
         
     except Exception as e:
         activity.logger.error(f"[Report Graph] Failed: {e}")

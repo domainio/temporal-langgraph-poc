@@ -1,4 +1,5 @@
 import re
+import uuid
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
@@ -8,7 +9,7 @@ from ..utils.graph_builder import GraphBuilder, log_graph_execution, extract_sou
 
 @activity.defn
 async def research_section_activity_with_langgraph(section_title: str, topic: str, search_depth: int) -> ResearchSection:
-    """Research activity using LangGraph StateGraph"""
+    """Research activity using LangGraph StateGraph with checkpointing"""
     activity.logger.info(f"[Research] Starting LangGraph-based research for: {section_title}")
     
     try:
@@ -161,18 +162,23 @@ async def research_section_activity_with_langgraph(section_title: str, topic: st
                 "messages": state["messages"] + [response]
             }
         
-        # Build the research graph using the utility
+        # Build the research graph with checkpointing enabled
         research_graph = GraphBuilder.create_linear_flow(
             ResearchGraphState,
             [
                 ("generate_queries", generate_queries_node),
                 ("conduct_searches", conduct_searches_node),
                 ("synthesize_content", synthesize_content_node)
-            ]
+            ],
+            enable_checkpointing=True  # Enable checkpointing for state persistence
         )
         
-        # Execute the research graph
-        log_graph_execution("Research", "Executing research workflow")
+        # Create a unique thread ID for this research session
+        thread_id = f"research_{section_title.lower().replace(' ', '_')}_{uuid.uuid4().hex[:8]}"
+        config = {"configurable": {"thread_id": thread_id}}
+        
+        # Execute the research graph with checkpointing
+        log_graph_execution("Research", "Executing research workflow with checkpointing", f"thread_id: {thread_id}")
         research_result = research_graph.invoke({
             "section_title": section_title,
             "topic": topic,
@@ -185,7 +191,16 @@ async def research_section_activity_with_langgraph(section_title: str, topic: st
             "searches_completed": False,
             "content_synthesized": False,
             "messages": []
-        })
+        }, config)
+        
+        # Log checkpoint information for debugging
+        try:
+            final_state = research_graph.get_state(config)
+            activity.logger.info(f"[Research] Checkpoint saved with ID: {final_state.config.get('checkpoint_id', 'unknown')}")
+            activity.logger.info(f"[Research] Final state contains {len(final_state.values.get('messages', []))} messages")
+            activity.logger.info(f"[Research] Searches completed: {final_state.values.get('searches_completed', False)}")
+        except Exception as e:
+            activity.logger.warning(f"[Research] Could not retrieve checkpoint info: {e}")
         
         # Create final section
         section = ResearchSection(

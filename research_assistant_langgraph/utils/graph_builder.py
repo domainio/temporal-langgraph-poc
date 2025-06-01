@@ -1,5 +1,6 @@
-from typing import TypeVar, Callable, Dict, Any
+from typing import TypeVar, Callable, Dict, Any, Optional
 from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.memory import InMemorySaver
 from temporalio import activity
 
 StateType = TypeVar('StateType')
@@ -34,18 +35,26 @@ class GraphBuilder:
         self.graph.set_entry_point(node_name)
         return self
     
-    def compile(self):
-        """Compile and return the graph"""
+    def compile(self, checkpointer=None):
+        """Compile and return the graph with optional checkpointing"""
+        if checkpointer is not None:
+            return self.graph.compile(checkpointer=checkpointer)
         return self.graph.compile()
     
     @staticmethod
-    def create_linear_flow(state_type: type, nodes: list[tuple[str, NodeFunction]]) -> StateGraph:
+    def create_memory_checkpointer():
+        """Create a simple in-memory checkpointer for basic persistence"""
+        return InMemorySaver()
+    
+    @staticmethod
+    def create_linear_flow(state_type: type, nodes: list[tuple[str, NodeFunction]], enable_checkpointing: bool = False) -> StateGraph:
         """
         Create a simple linear flow graph where nodes execute in sequence
         
         Args:
             state_type: The TypedDict class for state
             nodes: List of (name, function) tuples
+            enable_checkpointing: Whether to enable memory checkpointing
         
         Returns:
             Compiled StateGraph
@@ -67,7 +76,9 @@ class GraphBuilder:
             # Connect last node to END
             builder.add_edge(nodes[-1][0], END)
         
-        return builder.compile()
+        # Compile with optional checkpointing
+        checkpointer = GraphBuilder.create_memory_checkpointer() if enable_checkpointing else None
+        return builder.compile(checkpointer=checkpointer)
     
     @staticmethod
     def create_conditional_flow(
@@ -75,7 +86,8 @@ class GraphBuilder:
         entry_node: tuple[str, NodeFunction],
         conditional_nodes: Dict[str, NodeFunction],
         condition_func: Callable,
-        end_node: tuple[str, NodeFunction] = None
+        end_node: tuple[str, NodeFunction] = None,
+        enable_checkpointing: bool = False
     ) -> StateGraph:
         """
         Create a conditional flow where execution path depends on state
@@ -86,6 +98,7 @@ class GraphBuilder:
             conditional_nodes: Dict of condition_result -> node_function
             condition_func: Function that returns which path to take
             end_node: Optional final node, if None goes directly to END
+            enable_checkpointing: Whether to enable memory checkpointing
         
         Returns:
             Compiled StateGraph
@@ -115,7 +128,9 @@ class GraphBuilder:
                 builder.add_edge(name, end_node[0])
             builder.add_edge(end_node[0], END)
         
-        return builder.compile()
+        # Compile with optional checkpointing
+        checkpointer = GraphBuilder.create_memory_checkpointer() if enable_checkpointing else None
+        return builder.compile(checkpointer=checkpointer)
 
 def log_graph_execution(phase: str, step: str, details: str = ""):
     """Helper function for consistent logging across graph executions"""
